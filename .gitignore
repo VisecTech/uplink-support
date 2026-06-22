@@ -10,3 +10,6 @@ next-env.d.ts
 
 # build info
 tsconfig.tsbuildinfo
+
+# deploy key
+.ssh/
