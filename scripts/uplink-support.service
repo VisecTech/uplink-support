@@ -1,0 +1,32 @@
+# /etc/systemd/system/uplink-support.service
+#
+# Standalone Uplink support app (support.uplink.net.au) — independent of Counter.
+# Runs the Next.js standalone server on :3081. Loads its own env file.
+#
+# Install: sudo cp scripts/uplink-support.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now uplink-support
+
+[Unit]
+Description=Uplink Web Services — standalone support app (support.uplink.net.au)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=debian
+Group=debian
+WorkingDirectory=/opt/uplink-support
+EnvironmentFile=/etc/uplink-support/.env
+ExecStart=/usr/bin/node .next/standalone/server.js
+Environment=PORT=3081 HOSTNAME=127.0.0.1
+Restart=on-failure
+RestartSec=5
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/opt/uplink-support
+MemoryMax=768M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

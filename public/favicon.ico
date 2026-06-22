@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Uplink Web Services">
+  <defs>
+    <linearGradient id="uplinkRed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b91c1c"/>
+      <stop offset="1" stop-color="#7f1d1d"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#uplinkRed)"/>
+  <g fill="none" stroke="#faf8f5" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 30 L32 18 L44 30"/>
+    <path d="M32 19 L32 39"/>
+  </g>
+  <circle cx="32" cy="46" r="4.6" fill="#faf8f5"/>
+</svg>

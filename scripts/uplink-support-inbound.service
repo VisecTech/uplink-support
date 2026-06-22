@@ -1,0 +1,14 @@
+# /etc/systemd/system/uplink-support-inbound.service
+# One-shot inbound-email poller (run by uplink-support-inbound.timer).
+[Unit]
+Description=Uplink support — inbound email poller (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+User=debian
+Group=debian
+WorkingDirectory=/opt/uplink-support
+EnvironmentFile=/etc/uplink-support/.env
+ExecStart=/opt/uplink-support/node_modules/.bin/tsx scripts/poll-inbound.ts
+TimeoutStartSec=120

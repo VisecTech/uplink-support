@@ -1,0 +1,12 @@
+# /etc/systemd/system/uplink-support-inbound.timer
+[Unit]
+Description=Poll the support@ mailbox for new email every minute
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
