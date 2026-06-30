@@ -29,7 +29,9 @@ export async function draftReply(
 		const stream = client.messages.stream({
 			model: SUPPORT_AGENT_MODEL,
 			max_tokens: 1200,
-			system: SUPPORT_AGENT_SYSTEM,
+			// Prompt caching: the system prompt (persona + KB) is a large stable
+			// prefix reused across every draft within the 5-min TTL — cache it.
+			system: [{ type: "text", text: SUPPORT_AGENT_SYSTEM, cache_control: { type: "ephemeral" } }],
 			messages: [{ role: "user", content: ctx.prompt }],
 		});
 		const final = await stream.finalMessage();
