@@ -54,3 +54,9 @@ body {
 .kb-article pre code { background: none; padding: 0; }
 .kb-article blockquote { border-left: 3px solid rgba(0,0,0,.2); padding-left: 1rem; color: rgba(0,0,0,.6); margin: 1rem 0; }
 .dark .kb-article blockquote { border-color: rgba(255,255,255,.25); color: rgba(255,255,255,.6); }
+
+/* Clickable affordance — every clickable shows the hand (pointer) cursor.
+   Native <a href> gets it for free; <button>/summary/role=button/onClick do NOT.
+   uplink-design convention, applied fleet-wide 2026-06-30. */
+a[href], button, summary, label[for], [role="button"], [role="tab"], [role="menuitem"], [role="option"], [onclick] { cursor: pointer; }
+:disabled, [disabled], [aria-disabled="true"] { cursor: not-allowed; }
