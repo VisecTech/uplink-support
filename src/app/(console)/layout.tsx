@@ -30,6 +30,14 @@ export default async function ConsoleLayout({ children }: { children: ReactNode 
 						<Link href="/kb" className="text-sm text-stone-400 hover:text-white">Knowledge base</Link>
 					</div>
 					<div className="flex items-center gap-4">
+						<a
+							href="https://admin.uplink.net.au"
+							className="text-xs text-stone-400 hover:text-white"
+							title="Back to the Uplink admin console"
+						>
+							← Admin
+						</a>
+						<span className="text-xs text-stone-500">·</span>
 						<span className="text-xs text-stone-400">{staff.name || staff.email}</span>
 						<form action={logoutAction}>
 							<button type="submit" className="text-xs text-stone-400 hover:text-white">
