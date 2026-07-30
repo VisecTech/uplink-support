@@ -17,6 +17,10 @@
 
 	var css = "" +
 		".uws-launch{position:fixed;bottom:20px;right:20px;z-index:2147483000;background:" + ACCENT + ";color:#fff;border:none;border-radius:999px;padding:12px 18px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer}" +
+		/* Phone widths: the full "💬 Support" lozenge is wide enough to sit on the
+		   right half of full-width form controls as they scroll past (it covered
+		   the plan selector on the Shopkit signup page). Icon-only circle instead. */
+		"@media (max-width:480px){.uws-launch{width:48px;height:48px;padding:0;font-size:20px;line-height:48px;text-align:center}.uws-launch .uws-label{display:none}}" +
 		".uws-panel{position:fixed;bottom:20px;right:20px;z-index:2147483001;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 40px);background:#fff;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.3);display:none;flex-direction:column;overflow:hidden;font:14px system-ui,sans-serif;color:#0f0f0f}" +
 		".uws-hd{background:" + ACCENT + ";color:#fff;padding:14px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center}" +
 		".uws-hd button{background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer}" +
@@ -34,7 +38,13 @@
 	var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
 	var launch = document.createElement("button");
-	launch.className = "uws-launch"; launch.textContent = "💬 " + TITLE;
+	launch.className = "uws-launch";
+	launch.appendChild(document.createTextNode("💬"));
+	var launchLabel = document.createElement("span");
+	launchLabel.className = "uws-label";
+	launchLabel.textContent = " " + TITLE;
+	launch.appendChild(launchLabel);
+	launch.setAttribute("aria-label", TITLE);
 	var panel = document.createElement("div"); panel.className = "uws-panel";
 	panel.innerHTML =
 		'<div class="uws-hd"><span>' + TITLE + '</span><button aria-label="Close">×</button></div>' +

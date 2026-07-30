@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /new
+Disallow: /ticket
+Disallow: /api/
+
+Sitemap: https://support.uplink.net.au/sitemap.xml
