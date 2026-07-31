@@ -25,10 +25,28 @@ export async function buildSupportSystem(productKind: string): Promise<string> {
 		.from(support_article)
 		.where(scope)
 		.orderBy(asc(support_article.sort_order))
-		.limit(20);
+		// ⚠ Was limit(20) — which silently starved this bot. 19 shopkit articles
+		// share the default sort_order of 0, so alphabetical order filled almost
+		// the whole budget and everything deliberately ordered after them fell
+		// off: getting-started, the FAQs (both), billing, adding-products,
+		// custom-domain, your-data-is-yours and payment-options were ALL invisible
+		// to it — i.e. most of what people actually ask a support widget. The bot
+		// answered "I can't confirm that from here" and looked useless, with no
+		// error anywhere to explain why. 43 published articles at the 1500-char
+		// cap is ~12.7k tokens, and this prompt is already cached, so take them all.
+		.limit(200);
 
 	const kb = rows.length
-		? rows.map((a) => `# ${a.title}\n${(a.summary || a.body || "").slice(0, 1500)}`).join("\n\n")
+		? rows
+				// ⚠ Body, not summary. `summary || body` meant any article WITH a
+				// summary contributed ~110 characters of blurb instead of its
+				// content, so the bot knew a topic existed but not what it said.
+				// Summary first as a one-line hook, then the article itself.
+				.map((a) => {
+					const head = a.summary ? `${a.summary}\n\n` : "";
+					return `# ${a.title}\n${head}${(a.body || "").slice(0, 1500)}`;
+				})
+				.join("\n\n")
 		: "(no articles published yet)";
 
 	return `You are the support assistant for Uplink Web Services, an Australian web-services company
