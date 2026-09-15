@@ -13,6 +13,7 @@ import { support_attachment, support_message, support_ticket } from "@/db/schema
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
+import { isKnownSender } from "@/lib/known-sender";
 import { productFromRecipients } from "@/lib/products";
 
 const BLOCKED_EXTS = new Set([
@@ -37,6 +38,43 @@ export type InboundEmail = {
 export type InboundResult =
 	| { ok: true; action: "created" | "appended"; ticketId: string }
 	| { ok: false; skipped: string };
+
+/**
+ * Outgoing mail started while processing inbound email.
+ *
+ * ⚠⚠ The poller is a short-lived process that calls process.exit() when it is
+ * done. These sends used to be fire-and-forget, so the poller routinely exited
+ * a second after starting them and killed their SMTP connections mid-send
+ * (Plesk: "lost connection after AUTH"). Found 2026-09-15: two test tickets were
+ * created correctly and NEITHER the staff alerts NOR the confirmation ever left.
+ * Track them here; the poller waits via flushInboundMail() before exiting.
+ */
+const pendingMail: Promise<void>[] = [];
+
+function trackMail(label: string, send: Promise<unknown>): void {
+	pendingMail.push(
+		send.then(
+			() => undefined,
+			(e) => console.error(`[inbound] ${label} failed`, e),
+		),
+	);
+}
+
+/** Wait (bounded) for every email started so far. Call before the process exits. */
+export async function flushInboundMail(timeoutMs = 30_000): Promise<void> {
+	if (pendingMail.length === 0) return;
+	const count = pendingMail.length;
+	const all = Promise.allSettled(pendingMail.splice(0)).then(() => "done" as const);
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<"timeout">((r) => {
+		timer = setTimeout(() => r("timeout"), timeoutMs);
+	});
+	const outcome = await Promise.race([all, timeout]);
+	if (timer) clearTimeout(timer);
+	if (outcome === "timeout") {
+		console.error(`[inbound] gave up waiting for ${count} outgoing email(s) after ${timeoutMs}ms`);
+	}
+}
 
 function isAutomated(from: string): boolean {
 	return /(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounce)@/i.test(from);
@@ -80,7 +118,7 @@ async function findTicketId(email: InboundEmail): Promise<string | null> {
  * ticket and email a "we got your request" confirmation to whoever sent it.
  *  - "thread":   it replies to an existing ticket ([UWS-] token / In-Reply-To / References)
  *  - "requester": staff have replied on one of this sender's earlier tickets
- *  - "customer": the sender is a known Uplink customer
+ *  - "customer": the sender is a known Uplink customer or ShopKit store login
  * Returns null for everything else (left in Spam).
  *
  * ⚠ "Has opened a ticket before" is NOT enough. Most historical email tickets are
@@ -98,7 +136,8 @@ export async function spamRescueReason(email: InboundEmail): Promise<"thread" | 
 		.where(and(eq(support_ticket.requester_email, email.fromEmail), eq(support_message.author_kind, "agent")))
 		.limit(1);
 	if (answered) return "requester";
-	if (await resolveCustomerByEmail(email.fromEmail)) return "customer";
+	// Uplink customer OR ShopKit store login (see lib/known-sender.ts).
+	if (await isKnownSender(email.fromEmail)) return "customer";
 	return null;
 }
 
@@ -169,15 +208,18 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 				})
 				.where(eq(support_ticket.id, ticket.id));
 
-			sendSupportStaffAlert({
-				ticketId: ticket.id,
-				subject: ticket.subject,
-				productKind: ticket.product_kind,
-				channel: "email",
-				requesterEmail: ticket.requester_email,
-				requesterName: ticket.requester_name,
-				bodyPreview: `↩ customer reply:\n${body}`,
-			}).catch((e) => console.error("[inbound] staff alert failed", e));
+			trackMail(
+				"staff alert",
+				sendSupportStaffAlert({
+					ticketId: ticket.id,
+					subject: ticket.subject,
+					productKind: ticket.product_kind,
+					channel: "email",
+					requesterEmail: ticket.requester_email,
+					requesterName: ticket.requester_name,
+					bodyPreview: `↩ customer reply:\n${body}`,
+				}),
+			);
 
 			return { ok: true, action: "appended", ticketId: ticket.id };
 		}
@@ -186,6 +228,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 	// ---- New email-channel ticket ----
 	const subject = cleanSubject(email.subject).slice(0, 300);
 	const customer = await resolveCustomerByEmail(email.fromEmail);
+	// Known = Uplink customer or ShopKit store login. Unknown senders still get a
+	// ticket and staff are alerted, but no automatic reply is sent (Paul, 2026-09-15).
+	const known = Boolean(customer) || (await isKnownSender(email.fromEmail));
 	let subscription_id: string | null = null;
 	let resource_ref: string | null = null;
 	// The product the client pointed at: support+<product>@uplink.net.au, or a
@@ -203,6 +248,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 	await db.insert(support_ticket).values({
 		id: ticketId,
 		uplink_customer_id: customer?.id ?? null,
+		requester_verified: known,
 		requester_email: email.fromEmail,
 		requester_name: email.fromName ?? customer?.name ?? null,
 		product_kind,
@@ -228,18 +274,25 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 		.returning();
 	await saveAttachments(ticketId, msg.id, email);
 
-	sendSupportCustomerConfirm({ to: email.fromEmail, requesterName: email.fromName, ticketId, subject }).catch((e) =>
-		console.error("[inbound] confirm failed", e),
+	if (known) {
+		trackMail(
+			"confirm",
+			sendSupportCustomerConfirm({ to: email.fromEmail, requesterName: email.fromName, ticketId, subject }),
+		);
+	}
+	trackMail(
+		"staff alert",
+		sendSupportStaffAlert({
+			ticketId,
+			subject,
+			productKind: product_kind,
+			channel: "email",
+			requesterEmail: email.fromEmail,
+			requesterName: email.fromName,
+			bodyPreview: body,
+			unverified: !known,
+		}),
 	);
-	sendSupportStaffAlert({
-		ticketId,
-		subject,
-		productKind: product_kind,
-		channel: "email",
-		requesterEmail: email.fromEmail,
-		requesterName: email.fromName,
-		bodyPreview: body,
-	}).catch((e) => console.error("[inbound] staff alert failed", e));
 
 	return { ok: true, action: "created", ticketId };
 }

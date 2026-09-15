@@ -164,7 +164,9 @@
 			});
 			var data = await res.json();
 			form.style.display = "none"; bodyEl.style.display = "block";
-			if (data && data.ok) addBot("Thanks — we've opened ticket " + data.ref + " and emailed you a confirmation. We'll be in touch shortly.");
+			if (data && data.ok) addBot(data.confirmed === false
+				? "Thanks — we've opened ticket " + data.ref + ". We'll be in touch shortly."
+				: "Thanks — we've opened ticket " + data.ref + " and emailed you a confirmation. We'll be in touch shortly.");
 			else { addBot("Sorry, that didn't go through. Please email " + SUPPORT_EMAIL + " directly."); try { if (window.turnstile && tsWidgetId !== null) window.turnstile.reset(tsWidgetId); } catch (e) {} }
 		} catch (e) {
 			form.style.display = "none"; addBot("Sorry, that didn't go through. Please email support directly.");

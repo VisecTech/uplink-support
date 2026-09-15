@@ -16,7 +16,7 @@
  */
 import { ImapFlow } from "imapflow";
 import { simpleParser, type ParsedMail } from "mailparser";
-import { type InboundEmail, processInboundEmail, spamRescueReason } from "@/lib/inbound/process";
+import { flushInboundMail, type InboundEmail, processInboundEmail, spamRescueReason } from "@/lib/inbound/process";
 
 const host = process.env.IMAP_HOST;
 const user = process.env.IMAP_USER;
@@ -141,6 +141,10 @@ async function main() {
 			}
 		}
 	} finally {
+		// Wait for the alerts/confirmations processInboundEmail started. Exiting first
+		// kills their SMTP connections mid-send — every alert from the 2026-09-15 test
+		// run was lost that way.
+		await flushInboundMail();
 		await client.logout();
 	}
 	console.log(

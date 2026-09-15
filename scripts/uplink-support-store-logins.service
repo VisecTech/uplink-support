@@ -1,0 +1,11 @@
+[Unit]
+Description=Uplink support — sync ShopKit store login emails into the desk (known senders)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+ExecStart=/opt/uplink-support/scripts/sync-store-logins.sh
+NoNewPrivileges=true
+PrivateTmp=true

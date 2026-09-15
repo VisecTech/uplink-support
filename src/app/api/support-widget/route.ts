@@ -12,6 +12,7 @@ import { support_message, support_ticket } from "@/db/schema";
 import { reportFleetUsage } from "@/lib/ai/usage-report";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
+import { isStoreLogin } from "@/lib/known-sender";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
 import { verifyTurnstileStrict } from "@/lib/turnstile";
 import { buildSupportSystem, SUPPORT_WIDGET_MODEL } from "@/lib/support/support-knowledge";
@@ -95,6 +96,9 @@ export async function POST(req: Request): Promise<Response> {
 		if (!message) return json({ ok: false, error: "message required" }, 400);
 
 		const customer = await resolveCustomerByEmail(email);
+		// Known = Uplink customer or ShopKit store login. Unknown senders still get a
+		// ticket and staff are alerted, but no automatic reply is sent (Paul, 2026-09-15).
+		const known = Boolean(customer) || (await isStoreLogin(email));
 		let subscription_id: string | null = null;
 		let resource_ref: string | null = null;
 		if (customer && pk !== "general") {
@@ -109,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
 		await db.insert(support_ticket).values({
 			id: ticketId,
 			uplink_customer_id: customer?.id ?? null,
+			requester_verified: known,
 			requester_email: email,
 			requester_name: name ?? customer?.name ?? null,
 			product_kind: pk,
@@ -128,9 +133,11 @@ export async function POST(req: Request): Promise<Response> {
 			body_text: message,
 		});
 
-		sendSupportCustomerConfirm({ to: email, requesterName: name, ticketId, subject }).catch((e) =>
-			console.error("[support-widget] confirm failed", e),
-		);
+		if (known) {
+			sendSupportCustomerConfirm({ to: email, requesterName: name, ticketId, subject }).catch((e) =>
+				console.error("[support-widget] confirm failed", e),
+			);
+		}
 		sendSupportStaffAlert({
 			ticketId,
 			subject,
@@ -139,9 +146,11 @@ export async function POST(req: Request): Promise<Response> {
 			requesterEmail: email,
 			requesterName: name,
 			bodyPreview: message,
+			unverified: !known,
 		}).catch((e) => console.error("[support-widget] staff alert failed", e));
 
-		return json({ ok: true, ref: supportRef(ticketId) });
+		// confirmed tells the widget whether to say "we emailed you a confirmation".
+		return json({ ok: true, ref: supportRef(ticketId), confirmed: known });
 	}
 
 	// ---- Chat: KB-grounded deflection ----

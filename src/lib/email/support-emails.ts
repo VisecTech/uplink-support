@@ -76,12 +76,17 @@ export async function sendSupportStaffAlert(opts: {
 	requesterName?: string | null;
 	bodyPreview: string;
 	to?: string;
+	/** Sender matched no Uplink customer or store login — no automatic reply was sent. */
+	unverified?: boolean;
 }): Promise<void> {
 	const ref = supportRef(opts.ticketId);
 	const to = opts.to || process.env.STAFF_ALERT_EMAIL || emailRole("support");
 	const link = `${siteUrl()}/t/${opts.ticketId}`;
+	const unverifiedHtml = opts.unverified
+		? `<p style="color:#92400e"><strong>Unverified sender</strong> — not an Uplink customer or store login, so no automatic reply was sent.</p>`
+		: "";
 	const html = shell(
-		`<p><strong>New ${esc(opts.channel)} ticket — ${esc(opts.productKind)}</strong></p>
+		`<p><strong>New ${esc(opts.channel)} ticket — ${esc(opts.productKind)}</strong></p>${unverifiedHtml}
      <p style="background:#faf8f5;border:1px solid #eee;border-radius:8px;padding:12px 14px">
        <strong>${ref}</strong> · ${esc(opts.subject)}<br/>
        From: ${esc(opts.requesterName || "")} &lt;${esc(opts.requesterEmail)}&gt;
@@ -89,8 +94,14 @@ export async function sendSupportStaffAlert(opts: {
      <p style="white-space:pre-wrap;color:#333">${esc(opts.bodyPreview.slice(0, 600))}</p>
      <p><a href="${link}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px">Open ticket</a></p>`,
 	);
-	const text = `New ${opts.channel} ticket — ${opts.productKind}\n${ref} · ${opts.subject}\nFrom: ${opts.requesterName || ""} <${opts.requesterEmail}>\n\n${opts.bodyPreview.slice(0, 600)}\n\nOpen: ${link}`;
-	await sendEmail({ to, subject: `[${ref}] ${opts.subject}`, html, text, replyTo: opts.requesterEmail });
+	const text = `${opts.unverified ? "UNVERIFIED sender — not an Uplink customer or store login, so no automatic reply was sent.\n\n" : ""}New ${opts.channel} ticket — ${opts.productKind}\n${ref} · ${opts.subject}\nFrom: ${opts.requesterName || ""} <${opts.requesterEmail}>\n\n${opts.bodyPreview.slice(0, 600)}\n\nOpen: ${link}`;
+	await sendEmail({
+		to,
+		subject: `${opts.unverified ? "[Unverified] " : ""}[${ref}] ${opts.subject}`,
+		html,
+		text,
+		replyTo: opts.requesterEmail,
+	});
 }
 
 /** An agent's reply to the customer (threaded). */

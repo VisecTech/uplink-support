@@ -99,6 +99,9 @@ export const support_ticket = pgTable(
 		ai_deflected: boolean("ai_deflected").notNull().default(false),
 		ip: varchar("ip", { length: 64 }),
 		user_agent: text("user_agent"),
+		// true = Uplink customer or ShopKit store login; false = unknown sender (the
+		// ticket opens but no automatic reply is sent); null = created before 2026-09-15.
+		requester_verified: boolean("requester_verified"),
 	},
 	(t) => ({
 		status_idx: index("support_ticket_status_idx").on(t.status),
@@ -108,9 +111,27 @@ export const support_ticket = pgTable(
 		token_unique: uniqueIndex("support_ticket_token_unique").on(t.customer_token),
 		thread_idx: index("support_ticket_thread_idx").on(t.email_thread_key),
 		msgid_idx: index("support_ticket_msgid_idx").on(t.email_message_id),
+		verified_idx: index("support_ticket_verified_idx").on(t.requester_verified, t.status),
 	}),
 );
 export type SupportTicket = typeof support_ticket.$inferSelect;
+
+/**
+ * Active login emails from every ShopKit store database. The desk cannot read
+ * tenant databases, so scripts/sync-store-logins.sh (postgres, every 15 min)
+ * copies them here. Primary key (email, tenant_slug) is created by migration 0001.
+ */
+export const known_store_login = pgTable(
+	"known_store_login",
+	{
+		email: varchar("email", { length: 320 }).notNull(),
+		tenant_slug: varchar("tenant_slug", { length: 80 }).notNull(),
+		synced_at: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => ({
+		email_idx: index("known_store_login_email_idx").on(t.email),
+	}),
+);
 
 export const support_message = pgTable(
 	"support_message",

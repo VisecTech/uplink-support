@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/db";
 import { support_ticket } from "@/db/schema";
@@ -11,6 +11,9 @@ const STATUS_TABS = [
 	{ key: "pending", label: "Pending" },
 	{ key: "on_hold", label: "On hold" },
 	{ key: "solved", label: "Solved" },
+	// Tickets from senders who are neither an Uplink customer nor a ShopKit store
+	// login (requester_verified = false) that are not closed yet.
+	{ key: "unverified", label: "Unverified" },
 	{ key: "all", label: "All" },
 ];
 
@@ -37,7 +40,12 @@ export default async function SupportInboxPage({
 	const status = sp.status ?? "open";
 
 	const conds = [isNull(support_ticket.deleted_at)];
-	if (status !== "all") conds.push(eq(support_ticket.status, status));
+	if (status === "unverified") {
+		conds.push(eq(support_ticket.requester_verified, false));
+		conds.push(ne(support_ticket.status, "closed"));
+	} else if (status !== "all") {
+		conds.push(eq(support_ticket.status, status));
+	}
 	if (sp.product) conds.push(eq(support_ticket.product_kind, sp.product));
 
 	const rows = await db
@@ -96,7 +104,17 @@ export default async function SupportInboxPage({
 											{t.subject}
 										</Link>
 									</td>
-									<td className="px-4 py-2.5 text-stone-400">{t.requester_name || t.requester_email}</td>
+									<td className="px-4 py-2.5 text-stone-400">
+										{t.requester_name || t.requester_email}
+										{t.requester_verified === false ? (
+											<span
+												title="Not an Uplink customer or store login — no automatic reply was sent"
+												className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-300"
+											>
+												Unverified
+											</span>
+										) : null}
+									</td>
 									<td className="px-4 py-2.5 text-stone-400">{t.product_kind}</td>
 									<td className="px-4 py-2.5">
 										<span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[t.status] ?? "bg-stone-700/40 text-stone-300"}`}>

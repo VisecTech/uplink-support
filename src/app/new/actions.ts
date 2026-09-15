@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { support_attachment, support_message, support_ticket } from "@/db/schema";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
+import { isStoreLogin } from "@/lib/known-sender";
 import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
 import { productOrGeneral } from "@/lib/products";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
@@ -74,6 +75,9 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 	// conn — stamps the ticket with the real customer + subscription context at
 	// creation. Best-effort; degrades to an anonymous ticket on no match.
 	const customer = await resolveCustomerByEmail(email);
+	// Known = Uplink customer or ShopKit store login. Unknown senders still get a
+	// ticket and staff are alerted, but no automatic reply is sent (Paul, 2026-09-15).
+	const known = Boolean(customer) || (await isStoreLogin(email));
 	let subscription_id: string | null = null;
 	let resource_ref: string | null = null;
 	if (customer && product_kind !== "general") {
@@ -92,6 +96,7 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 		.values({
 			id: ticketId,
 			uplink_customer_id: customer?.id ?? null,
+			requester_verified: known,
 			requester_email: email,
 			requester_name: name ?? customer?.name ?? null,
 			product_kind,
@@ -148,9 +153,11 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 		}
 	}
 
-	sendSupportCustomerConfirm({ to: email, requesterName: name, ticketId: ticket.id, subject }).catch((e) =>
-		console.error("[support] customer confirm email failed", e),
-	);
+	if (known) {
+		sendSupportCustomerConfirm({ to: email, requesterName: name, ticketId: ticket.id, subject }).catch((e) =>
+			console.error("[support] customer confirm email failed", e),
+		);
+	}
 	sendSupportStaffAlert({
 		ticketId: ticket.id,
 		subject,
@@ -159,6 +166,7 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 		requesterEmail: email,
 		requesterName: name,
 		bodyPreview: body,
+		unverified: !known,
 	}).catch((e) => console.error("[support] staff alert email failed", e));
 
 	return { ok: true, redirect: `/thanks?ref=${supportRef(ticket.id).replace("UWS-", "")}` };
