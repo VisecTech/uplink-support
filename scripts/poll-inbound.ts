@@ -58,6 +58,11 @@ async function main() {
 					references: refsToArray(parsed.references),
 					text: parsed.text ?? (parsed.html ? String(parsed.html).replace(/<[^>]+>/g, " ") : ""),
 					autoSubmitted: Boolean(parsed.headers.get("auto-submitted") && parsed.headers.get("auto-submitted") !== "no"),
+					// Raw recipient header lines, most-specific first: X-Original-To carries the
+					// support+<product>@ plus-address the client (or a product's Support link) used.
+					recipients: ["x-original-to", "delivered-to", "to", "cc"].flatMap((key) =>
+						(parsed.headerLines ?? []).filter((h) => h.key === key).map((h) => h.line),
+					),
 					attachments: (parsed.attachments ?? []).map((a) => ({
 						filename: a.filename ?? "attachment",
 						content: a.content,

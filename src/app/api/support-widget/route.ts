@@ -14,11 +14,11 @@ import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
 import { buildSupportSystem, SUPPORT_WIDGET_MODEL } from "@/lib/support/support-knowledge";
+import { productOrGeneral } from "@/lib/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTS = new Set(["general", "hosting", "shopkit", "sites", "clubkit", "webdev_project"]);
 const MAX_TURNS = 12;
 const MAX_CHARS = 2_000;
 const MAX_TOKENS = 500;
@@ -36,7 +36,7 @@ function clientIp(req: Request): string {
 	return req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip")?.trim() || "unknown";
 }
 function product(v: unknown): string {
-	return typeof v === "string" && PRODUCTS.has(v) ? v : "general";
+	return productOrGeneral(v);
 }
 function json(data: unknown, status = 200): Response {
 	return Response.json(data, { status, headers: CORS });

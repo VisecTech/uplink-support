@@ -2,9 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { PRODUCT_ORDER } from "@/lib/products";
 import { deleteArticleAction, saveArticleAction } from "./actions";
 
-const PRODUCTS = ["general", "hosting", "shopkit", "sites", "clubkit", "webdev_project"];
+const PRODUCTS = PRODUCT_ORDER;
 const FIELD =
 	"w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 focus:border-stone-500 focus:outline-none";
 

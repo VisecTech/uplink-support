@@ -10,12 +10,12 @@ import { support_attachment, support_message, support_ticket } from "@/db/schema
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
+import { productOrGeneral } from "@/lib/products";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 
 type R = { ok: true; redirect: string } | { ok: false; error: string; field?: string };
 
-const PRODUCTS = new Set(["general", "hosting", "shopkit", "sites", "clubkit", "webdev_project"]);
 const BLOCKED_EXTS = new Set([
 	".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".sh", ".ps1", ".jar", ".app", ".dll", ".vbs", ".pif",
 ]);
@@ -31,8 +31,7 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 	const name = String(formData.get("name") ?? "").trim() || null;
 	const subject = String(formData.get("subject") ?? "").trim();
 	const body = String(formData.get("message") ?? "").trim();
-	let product_kind = String(formData.get("product_kind") ?? "general").trim();
-	if (!PRODUCTS.has(product_kind)) product_kind = "general";
+	const product_kind = productOrGeneral(String(formData.get("product_kind") ?? "general").trim());
 
 	if (!email.includes("@")) return { ok: false, error: "valid email required", field: "email" };
 	if (!subject) return { ok: false, error: "a subject is required", field: "subject" };

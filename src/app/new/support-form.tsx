@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { PRODUCT_FORM_LABELS, PRODUCT_ORDER } from "@/lib/products";
 import { submitSupportTicketAction } from "./actions";
 
 const FIELD =
@@ -12,14 +13,10 @@ const FIELDSET =
 	"space-y-4 rounded-lg border border-black/10 bg-white/60 p-5 dark:border-white/10 dark:bg-white/5";
 const LEGEND = "px-2 text-xs uppercase tracking-widest text-black/50 dark:text-white/50";
 
-const PRODUCTS: { value: string; label: string }[] = [
-	{ value: "general", label: "General enquiry" },
-	{ value: "hosting", label: "Hosting" },
-	{ value: "shopkit", label: "Shopkit store" },
-	{ value: "sites", label: "Website (WPresskit)" },
-	{ value: "clubkit", label: "Clubkit" },
-	{ value: "webdev_project", label: "Web project" },
-];
+const PRODUCTS: { value: string; label: string }[] = PRODUCT_ORDER.map((value) => ({
+	value,
+	label: PRODUCT_FORM_LABELS[value] ?? value,
+}));
 
 const BLOCKED_EXTS = new Set([
 	".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".sh", ".ps1", ".jar", ".app", ".dll", ".vbs", ".pif",

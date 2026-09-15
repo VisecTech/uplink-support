@@ -13,6 +13,7 @@ import { support_attachment, support_message, support_ticket } from "@/db/schema
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
+import { productFromRecipients } from "@/lib/products";
 
 const BLOCKED_EXTS = new Set([
 	".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".sh", ".ps1", ".jar", ".app", ".dll", ".vbs", ".pif",
@@ -29,6 +30,8 @@ export type InboundEmail = {
 	text: string;
 	autoSubmitted: boolean;
 	attachments: { filename: string; content: Buffer; contentType: string | null; size: number }[];
+	/** Raw recipient header lines (X-Original-To, Delivered-To, To, Cc) — the product tag lives here. */
+	recipients?: string[];
 };
 
 export type InboundResult =
@@ -157,8 +160,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 	const customer = await resolveCustomerByEmail(email.fromEmail);
 	let subscription_id: string | null = null;
 	let resource_ref: string | null = null;
-	// email tickets default to 'general'; no product to match unless extended later
-	const product_kind = "general";
+	// The product the client pointed at: support+<product>@uplink.net.au, or a
+	// forwarded product address (see lib/products.ts). Anything else → 'general'.
+	const product_kind = productFromRecipients(email.recipients ?? []);
 	if (customer) {
 		const sub = await matchSubscription(customer.id, product_kind);
 		if (sub) {
