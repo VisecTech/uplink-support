@@ -7,7 +7,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-import { desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import { support_attachment, support_message, support_ticket } from "@/db/schema";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
@@ -71,6 +71,34 @@ async function findTicketId(email: InboundEmail): Promise<string | null> {
 			.limit(1);
 		if (msg) return msg.ticket_id;
 	}
+	return null;
+}
+
+/**
+ * Should a message the anti-spam filed in Spam become a ticket anyway?
+ * Only when it is clearly ours — otherwise every piece of junk would open a
+ * ticket and email a "we got your request" confirmation to whoever sent it.
+ *  - "thread":   it replies to an existing ticket ([UWS-] token / In-Reply-To / References)
+ *  - "requester": staff have replied on one of this sender's earlier tickets
+ *  - "customer": the sender is a known Uplink customer
+ * Returns null for everything else (left in Spam).
+ *
+ * ⚠ "Has opened a ticket before" is NOT enough. Most historical email tickets are
+ * cold pitches that reached INBOX, so that rule rescued repeat senders straight
+ * back out of Spam on its first live run (2026-09-15) and emailed them a
+ * confirmation. A staff reply is the signal that a sender is a real conversation.
+ */
+export async function spamRescueReason(email: InboundEmail): Promise<"thread" | "requester" | "customer" | null> {
+	if (email.autoSubmitted || isAutomated(email.fromEmail) || !email.fromEmail.includes("@")) return null;
+	if (await findTicketId(email)) return "thread";
+	const [answered] = await db
+		.select({ id: support_ticket.id })
+		.from(support_ticket)
+		.innerJoin(support_message, eq(support_message.ticket_id, support_ticket.id))
+		.where(and(eq(support_ticket.requester_email, email.fromEmail), eq(support_message.author_kind, "agent")))
+		.limit(1);
+	if (answered) return "requester";
+	if (await resolveCustomerByEmail(email.fromEmail)) return "customer";
 	return null;
 }
 
