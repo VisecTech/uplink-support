@@ -54,6 +54,7 @@
 		'<div class="uws-form">' +
 		'<input class="uws-email" type="email" placeholder="Your email" />' +
 		'<textarea class="uws-message" rows="4" placeholder="How can we help?"></textarea>' +
+		'<div class="uws-ts"></div>' +
 		'<button class="uws-submit">Send to support</button></div>';
 	document.body.appendChild(launch); document.body.appendChild(panel);
 
@@ -102,21 +103,69 @@
 	sendBtn.onclick = send;
 	input.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
 
-	human.onclick = function () { ft.style.display = "none"; human.style.display = "none"; form.style.display = "flex"; };
+	// ── Turnstile ────────────────────────────────────────────────────────────────
+	// Only the TICKET path is challenged; chat sends no email, so a customer asking a
+	// question is never interrupted. The script is loaded lazily on "Talk to a human"
+	// so chat-only visitors never fetch it at all.
+	// ⚠ The site key is public by design (it ships in the page). The SECRET lives only
+	// on the server. Pair created 2026-08-20; hostnames must include every host that
+	// renders this widget or the challenge silently refuses to appear.
+	var TS_SITE_KEY = "0x4AAAAAAEWQzwocjINPGxcY";
+	var SUPPORT_EMAIL = "support@uplink.net.au";
+	var tsWidgetId = null, tsUnavailable = false;
+
+	function tsLoad(cb) {
+		if (window.turnstile) return cb(true);
+		var sc = document.createElement("script");
+		sc.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+		sc.async = true; sc.defer = true;
+		sc.onload = function () { cb(true); };
+		sc.onerror = function () { cb(false); };
+		document.head.appendChild(sc);
+	}
+
+	function tsRender() {
+		var el = form.querySelector(".uws-ts");
+		if (!el || tsWidgetId !== null) return;
+		tsLoad(function (ok) {
+			if (!ok || !window.turnstile) {
+				// ⚠ Never a dead end: if the challenge cannot load, hand over the address.
+				tsUnavailable = true;
+				el.innerHTML = '<div style="font:12px system-ui;color:#7f1d1d;line-height:1.4">' +
+					"Security check unavailable — please email " +
+					'<a href="mailto:' + SUPPORT_EMAIL + '" style="color:#7f1d1d">' + SUPPORT_EMAIL + "</a> and we'll pick it up straight away.</div>";
+				return;
+			}
+			try { tsWidgetId = window.turnstile.render(el, { sitekey: TS_SITE_KEY }); }
+			catch (e) { tsUnavailable = true; }
+		});
+	}
+
+	human.onclick = function () {
+		ft.style.display = "none"; human.style.display = "none"; form.style.display = "flex";
+		tsRender();
+	};
 	panel.querySelector(".uws-submit").onclick = async function () {
 		var email = form.querySelector(".uws-email").value.trim();
 		var message = form.querySelector(".uws-message").value.trim();
 		if (!email || !message) { alert("Please enter your email and a message."); return; }
+		var tsToken = (window.turnstile && tsWidgetId !== null) ? window.turnstile.getResponse(tsWidgetId) : "";
+		if (!tsToken) {
+			alert(tsUnavailable
+				? "The security check couldn't load. Please email " + SUPPORT_EMAIL + " and we'll pick it up straight away."
+				: "Please complete the security check below, then send.");
+			return;
+		}
 		var btn = panel.querySelector(".uws-submit"); btn.disabled = true; btn.textContent = "Sending…";
 		try {
 			var res = await fetch(ENDPOINT, {
 				method: "POST", headers: { "content-type": "application/json" },
-				body: JSON.stringify({ mode: "ticket", productKind: PRODUCT, email: email, message: message }),
+				body: JSON.stringify({ mode: "ticket", productKind: PRODUCT, email: email, message: message, "cf-turnstile-response": tsToken }),
 			});
 			var data = await res.json();
 			form.style.display = "none"; bodyEl.style.display = "block";
 			if (data && data.ok) addBot("Thanks — we've opened ticket " + data.ref + " and emailed you a confirmation. We'll be in touch shortly.");
-			else addBot("Sorry, that didn't go through. Please email support directly.");
+			else { addBot("Sorry, that didn't go through. Please email " + SUPPORT_EMAIL + " directly."); try { if (window.turnstile && tsWidgetId !== null) window.turnstile.reset(tsWidgetId); } catch (e) {} }
 		} catch (e) {
 			form.style.display = "none"; addBot("Sorry, that didn't go through. Please email support directly.");
 		}

@@ -13,6 +13,7 @@ import { reportFleetUsage } from "@/lib/ai/usage-report";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
+import { verifyTurnstileStrict } from "@/lib/turnstile";
 import { buildSupportSystem, SUPPORT_WIDGET_MODEL } from "@/lib/support/support-knowledge";
 import { productOrGeneral } from "@/lib/products";
 
@@ -72,6 +73,16 @@ export async function POST(req: Request): Promise<Response> {
 
 	// ---- Escalation: open a ticket ----
 	if (mode === "ticket") {
+		// ⚠⚠ Turnstile FIRST — before the rate limit, the DB insert and the email.
+		// This path mails a CALLER-SUPPLIED address, which is the exact property that turned
+		// CourseKit's open signup into an Abusix listing. Fail-closed; the error text always
+		// carries the support address so a refusal is never a dead end.
+		const ts = await verifyTurnstileStrict(
+			typeof body["cf-turnstile-response"] === "string" ? (body["cf-turnstile-response"] as string) : null,
+			clientIp(req),
+		);
+		if (!ts.ok) return json({ ok: false, error: ts.error }, 403);
+
 		const rl = publicRateLimitCheck(`support-widget-ticket:${clientIp(req)}`);
 		if (!rl.ok) return json({ ok: false, error: "rate_limited" }, 429);
 
