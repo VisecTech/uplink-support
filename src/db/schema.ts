@@ -65,6 +65,26 @@ export const support_staff_session = pgTable(
 );
 export type SupportStaffSession = typeof support_staff_session.$inferSelect;
 
+/** Single-use "forgot password" links. Token stored as SHA-256 only. */
+export const support_staff_password_reset = pgTable(
+	"support_staff_password_reset",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+		staff_id: uuid("staff_id")
+			.notNull()
+			.references(() => support_staff.id, { onDelete: "cascade" }),
+		token_hash: varchar("token_hash", { length: 64 }).notNull(),
+		expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+		used_at: timestamp("used_at", { withTimezone: true }),
+		requested_ip: varchar("requested_ip", { length: 64 }),
+	},
+	(t) => ({
+		token_unique: uniqueIndex("support_staff_password_reset_token_unique").on(t.token_hash),
+		staff_idx: index("support_staff_password_reset_staff_idx").on(t.staff_id),
+	}),
+);
+
 // ── Tickets ───────────────────────────────────────────────────────────────────
 export const support_ticket = pgTable(
 	"support_ticket",

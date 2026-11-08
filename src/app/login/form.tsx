@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { loginAction } from "./actions";
 
 const FIELD =
@@ -27,7 +28,12 @@ export function LoginForm() {
 				<label className="mb-1 block text-xs font-medium text-black/70 dark:text-white/70" htmlFor="password">
 					Password
 				</label>
-				<input id="password" name="password" type="password" required autoComplete="current-password" className={FIELD} />
+				<PasswordInput id="password" name="password" autoComplete="current-password" className={FIELD} />
+				<div className="mt-1.5 text-right">
+					<a href="/forgot-password" className="text-xs text-black/60 underline-offset-2 hover:underline dark:text-white/60">
+						Forgot password?
+					</a>
+				</div>
 			</div>
 			{state?.error && <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>}
 			<button
