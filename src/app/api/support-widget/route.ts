@@ -13,6 +13,8 @@ import { reportFleetUsage } from "@/lib/ai/usage-report";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
 import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { isStoreLogin } from "@/lib/known-sender";
+import { chatBudgetTake } from "@/lib/chat-budget";
+import { clientIpFromHeaders } from "@/lib/client-ip";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
 import { verifyTurnstileStrict } from "@/lib/turnstile";
 import { buildSupportSystem, SUPPORT_WIDGET_MODEL } from "@/lib/support/support-knowledge";
@@ -34,8 +36,10 @@ const CORS: Record<string, string> = {
 
 type InMsg = { role: "user" | "assistant"; content: string };
 
+// X-Real-IP only (see client-ip.ts). With no header every caller shares the one
+// "unknown" bucket, which is the strict direction to fail in.
 function clientIp(req: Request): string {
-	return req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip")?.trim() || "unknown";
+	return clientIpFromHeaders(req.headers) ?? "unknown";
 }
 function product(v: unknown): string {
 	return productOrGeneral(v);
@@ -157,11 +161,14 @@ export async function POST(req: Request): Promise<Response> {
 	const apiKey = process.env.SUPPORT_AI_API_KEY ?? process.env.IVY_API_KEY ?? process.env.ANTHROPIC_API_KEY;
 	if (!apiKey) return json({ ok: false, error: "unavailable" }, 503);
 
-	const rl = publicRateLimitCheck(`support-widget-chat:${clientIp(req)}`);
-	if (!rl.ok) return json({ ok: false, error: "rate_limited" }, 429);
-
+	// Validate BEFORE charging either limit, so a malformed request costs nothing.
 	const messages = sanitize(body.messages);
 	if (!messages) return json({ ok: false, error: "bad_request" }, 400);
+
+	const rl = publicRateLimitCheck(`support-widget-chat:${clientIp(req)}`);
+	if (!rl.ok) return json({ ok: false, error: "rate_limited" }, 429);
+	// Ceiling across all callers: the per-address limit cannot stop many addresses.
+	if (!chatBudgetTake().ok) return json({ ok: false, error: "busy" }, 429);
 	const pk = product(body.productKind);
 	const system = await buildSupportSystem(pk);
 

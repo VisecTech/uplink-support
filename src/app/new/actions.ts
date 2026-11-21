@@ -12,6 +12,7 @@ import { matchSubscription, resolveCustomerByEmail } from "@/lib/identity";
 import { isStoreLogin } from "@/lib/known-sender";
 import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
 import { productOrGeneral } from "@/lib/products";
+import { clientIpFromHeaders } from "@/lib/client-ip";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 
@@ -54,7 +55,8 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 	}
 
 	const h = await headers();
-	const ip = h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || null;
+	// X-Real-IP only: the first X-Forwarded-For hop is the caller's own text (client-ip.ts).
+	const ip = clientIpFromHeaders(h);
 	const user_agent = h.get("user-agent") ?? null;
 
 	const ts = await verifyTurnstile(String(formData.get("cf-turnstile-response") ?? ""), ip);
