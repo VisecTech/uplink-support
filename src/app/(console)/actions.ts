@@ -1,11 +1,11 @@
 "use server";
 
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { support_message, support_ticket } from "@/db/schema";
 import { requireStaff } from "@/lib/auth/staff";
-import { sendSupportAgentReply } from "@/lib/email/support-emails";
+import { postAgentReply } from "@/lib/agent-reply";
 
 type R = { ok: true } | { ok: false; error: string };
 
@@ -17,48 +17,24 @@ export async function replyToTicketAction(ticketId: string, body: string, isInte
 	const text = body.trim();
 	if (!text) return { ok: false, error: "message is empty" };
 
-	const [ticket] = await db.select().from(support_ticket).where(eq(support_ticket.id, ticketId)).limit(1);
-	if (!ticket) return { ok: false, error: "ticket not found" };
-
-	await db.insert(support_message).values({
-		ticket_id: ticket.id,
-		author_kind: "agent",
-		author_staff_id: staff.id,
-		body_text: text,
-		is_internal_note: isInternal,
-	});
-
-	if (!isInternal) {
-		const [lastInbound] = await db
-			.select({ mid: support_message.email_message_id })
-			.from(support_message)
-			.where(
-				and(
-					eq(support_message.ticket_id, ticket.id),
-					eq(support_message.author_kind, "customer"),
-					isNotNull(support_message.email_message_id),
-				),
-			)
-			.orderBy(desc(support_message.created_at))
-			.limit(1);
-
-		await sendSupportAgentReply({
-			to: ticket.requester_email,
-			requesterName: ticket.requester_name,
-			ticketId: ticket.id,
-			subject: ticket.subject,
-			bodyText: text,
-			inReplyTo: lastInbound?.mid ?? null,
-		}).catch((e) => console.error("[support] agent reply email failed", e));
-
-		await db
-			.update(support_ticket)
-			.set({
-				status: ticket.status === "solved" || ticket.status === "closed" ? "open" : "pending",
-				first_responded_at: ticket.first_responded_at ?? new Date(),
-				updated_at: new Date(),
-			})
-			.where(eq(support_ticket.id, ticket.id));
+	if (isInternal) {
+		const [ticket] = await db.select({ id: support_ticket.id }).from(support_ticket).where(eq(support_ticket.id, ticketId)).limit(1);
+		if (!ticket) return { ok: false, error: "ticket not found" };
+		await db.insert(support_message).values({
+			ticket_id: ticket.id,
+			author_kind: "agent",
+			author_staff_id: staff.id,
+			body_text: text,
+			is_internal_note: true,
+		});
+	} else {
+		// The same function scripts/agent-reply.ts uses: record, email, set pending.
+		const r = await postAgentReply({ ticketId, staffId: staff.id, text });
+		if (!r.ok) return r;
+		if (!r.emailed) {
+			revalidatePath(`/t/${ticketId}`);
+			return { ok: false, error: "Saved on the ticket, but the email could NOT be sent. Check mail settings and send it again." };
+		}
 	}
 
 	revalidatePath(`/t/${ticketId}`);
