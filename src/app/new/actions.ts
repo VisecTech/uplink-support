@@ -14,7 +14,8 @@ import { privateUploadRoot, sanitiseFilename } from "@/lib/private-uploads";
 import { productOrGeneral } from "@/lib/products";
 import { clientIpFromHeaders } from "@/lib/client-ip";
 import { publicRateLimitCheck } from "@/lib/public-rate-limit";
-import { verifyTurnstile } from "@/lib/turnstile";
+import { SUPPORT_EMAIL, verifyTurnstileStrict } from "@/lib/turnstile";
+import { anonymousUploadBytesLastDay, uploadRefusal } from "@/lib/upload-budget";
 
 type R = { ok: true; redirect: string } | { ok: false; error: string; field?: string };
 
@@ -59,19 +60,23 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 	const ip = clientIpFromHeaders(h);
 	const user_agent = h.get("user-agent") ?? null;
 
-	const ts = await verifyTurnstile(String(formData.get("cf-turnstile-response") ?? ""), ip);
+	// ⚠ STRICT since 2026-11-23: if the bot check cannot be confirmed (Cloudflare
+	// unreachable, or the secret missing) the form REFUSES and gives the support
+	// address. It used to accept everything in that case, which made the check
+	// decorative exactly when someone had a reason to make it fail.
+	const ts = await verifyTurnstileStrict(String(formData.get("cf-turnstile-response") ?? ""), ip);
 	if (!ts.ok) return { ok: false, error: ts.error };
 
-	if (ip) {
-		const rl = publicRateLimitCheck(`support-new:${ip}`);
-		if (!rl.ok)
-			return {
-				ok: false,
-				error: `Too many submissions from your network. Try again in ${Math.ceil(
-					rl.retryAfterSeconds / 60,
-				)} min, or email us directly.`,
-			};
-	}
+	// Always limited. A request with no address (one that did not come through
+	// nginx) used to skip the limit entirely; such callers now share one bucket.
+	const rl = publicRateLimitCheck(`support-new:${ip ?? "unknown"}`);
+	if (!rl.ok)
+		return {
+			ok: false,
+			error: `Too many submissions from your network. Try again in ${Math.ceil(
+				rl.retryAfterSeconds / 60,
+			)} min, or email ${SUPPORT_EMAIL} directly.`,
+		};
 
 	// Differentiator: resolve identity from the email over the READ-ONLY Counter
 	// conn — stamps the ticket with the real customer + subscription context at
@@ -80,6 +85,17 @@ export async function submitSupportTicketAction(formData: FormData): Promise<R> 
 	// Known = Uplink customer or ShopKit store login. Unknown senders still get a
 	// ticket and staff are alerted, but no automatic reply is sent (Paul, 2026-09-15).
 	const known = Boolean(customer) || (await isStoreLogin(email));
+
+	// A daily ceiling on files from people we cannot identify (lib/upload-budget.ts).
+	// Checked before anything is written, so a refusal leaves no ticket and no file.
+	const incomingBytes = files.reduce((n, f) => n + f.size, 0);
+	if (!known && incomingBytes > 0) {
+		const refusal = uploadRefusal({ known, incomingBytes, usedBytes: await anonymousUploadBytesLastDay(), supportEmail: SUPPORT_EMAIL });
+		if (refusal) {
+			console.warn(`[support] anonymous upload ceiling reached; refused ${incomingBytes} bytes from ${ip ?? "unknown"}`);
+			return { ok: false, error: refusal, field: "files" };
+		}
+	}
 	let subscription_id: string | null = null;
 	let resource_ref: string | null = null;
 	if (customer && product_kind !== "general") {

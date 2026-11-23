@@ -33,8 +33,9 @@ export async function verifyTurnstile(
 /* ─────────────────────────────────────────────────────────────────────────────
  * STRICT variant — added 2026-08-20 for the public support WIDGET.
  *
- * ⚠⚠ Do NOT replace `verifyTurnstile` above with this. That one is used by
- * /new and fails OPEN by design; this one fails CLOSED. Both are wanted.
+ * ⚠ Since 2026-11-23 the /new contact form uses THIS verifier too (audit: the
+ * fail-open one accepted everything whenever siteverify could not be reached).
+ * `verifyTurnstile` above is kept for callers that send nothing to anyone.
  *
  * WHY A SECOND VERIFIER. The public-surface audit asked one question of every
  * anonymous endpoint: does a caller cause email to be sent to an address THEY
