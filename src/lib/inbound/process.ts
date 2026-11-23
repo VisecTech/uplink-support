@@ -7,7 +7,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { support_attachment, support_message, support_ticket } from "@/db/schema";
 import { sendSupportCustomerConfirm, sendSupportStaffAlert, supportRef } from "@/lib/email/support-emails";
@@ -84,19 +84,22 @@ function cleanSubject(s: string): string {
 	return s.replace(/^\s*(re|fwd?):\s*/i, "").replace(/\s*\[UWS-[A-Z0-9]+\]\s*/i, " ").trim() || "Support request";
 }
 
+/** The hex part of a [UWS-…] reference in a subject, upper-cased, or null. */
+export function refFromSubject(subject: string): string | null {
+	const m = subject.match(/\[UWS-([0-9A-F]{6,32})\]/i);
+	return m ? m[1].toUpperCase() : null;
+}
+
+/** Same mailbox? Case and surrounding space are ignored; nothing cleverer. */
+export function sameSender(a: string | null | undefined, b: string | null | undefined): boolean {
+	const n = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+	return n(a) !== "" && n(a) === n(b);
+}
+
 async function findTicketId(email: InboundEmail): Promise<string | null> {
-	// 1) [UWS-xxxxxx] token in the subject → email_thread_key
-	const m = email.subject.match(/\[(UWS-[A-Z0-9]+)\]/i);
-	if (m) {
-		const token = m[1].toUpperCase();
-		const [t] = await db
-			.select({ id: support_ticket.id })
-			.from(support_ticket)
-			.where(eq(support_ticket.email_thread_key, token))
-			.limit(1);
-		if (t) return t.id;
-	}
-	// 2) In-Reply-To / References → a prior message's Message-ID
+	// 1) In-Reply-To / References → a prior message's Message-ID. Preferred: a
+	//    Message-ID is long and unguessable, and only someone who RECEIVED that
+	//    message has it. The subject reference is in every subject line.
 	const refs = [email.inReplyTo, ...email.references].filter((x): x is string => !!x);
 	if (refs.length) {
 		const [msg] = await db
@@ -108,6 +111,26 @@ async function findTicketId(email: InboundEmail): Promise<string | null> {
 			.orderBy(desc(support_message.created_at))
 			.limit(1);
 		if (msg) return msg.ticket_id;
+	}
+	// 2) [UWS-…] reference in the subject. The reference is the start of the
+	//    ticket's id, so it is matched as a prefix: that serves the six-character
+	//    references already in customers' inboxes and the ten-character ones sent
+	//    now. Newest first, so the rare shared six-character prefix has a defined
+	//    answer (it used to be whichever row the database returned).
+	const ref = refFromSubject(email.subject);
+	if (ref) {
+		const [t] = await db
+			.select({ id: support_ticket.id })
+			.from(support_ticket)
+			.where(
+				or(
+					eq(support_ticket.email_thread_key, `UWS-${ref}`),
+					sql`replace(${support_ticket.id}::text, '-', '') LIKE ${`${ref.toLowerCase()}%`}`,
+				),
+			)
+			.orderBy(desc(support_ticket.created_at))
+			.limit(1);
+		if (t) return t.id;
 	}
 	return null;
 }
@@ -189,6 +212,12 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 	if (existingTicketId) {
 		const [ticket] = await db.select().from(support_ticket).where(eq(support_ticket.id, existingTicketId)).limit(1);
 		if (ticket) {
+			// ⚠⚠ WHO SENT IT. Quoting the reference is enough to land here, and the
+			// reference is in every subject line: anyone the customer forwarded or
+			// CC'd has it. The mail is still filed (a colleague replying from their
+			// own address is common and must not be lost) but it is MARKED, so staff
+			// never read a stranger's words as the customer's instructions.
+			const otherSender = !sameSender(email.fromEmail, ticket.requester_email);
 			const [msg] = await db
 				.insert(support_message)
 				.values({
@@ -197,6 +226,8 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 					body_text: body,
 					email_message_id: email.messageId,
 					email_in_reply_to: email.inReplyTo,
+					sender_email: email.fromEmail.slice(0, 320),
+					sender_mismatch: otherSender,
 				})
 				.returning();
 			await saveAttachments(ticket.id, msg.id, email);
@@ -217,7 +248,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 					channel: "email",
 					requesterEmail: ticket.requester_email,
 					requesterName: ticket.requester_name,
-					bodyPreview: `↩ customer reply:\n${body}`,
+					bodyPreview: otherSender
+						? `⚠ reply from a DIFFERENT address (${email.fromEmail}), not the requester (${ticket.requester_email}):\n${body}`
+						: `↩ customer reply:\n${body}`,
 				}),
 			);
 
@@ -270,6 +303,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<InboundR
 			body_text: body,
 			email_message_id: email.messageId,
 			email_in_reply_to: email.inReplyTo,
+			sender_email: email.fromEmail.slice(0, 320),
 		})
 		.returning();
 	await saveAttachments(ticketId, msg.id, email);

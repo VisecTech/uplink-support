@@ -130,6 +130,9 @@ export const support_ticket = pgTable(
 		product_idx: index("support_ticket_product_idx").on(t.product_kind, t.status),
 		token_unique: uniqueIndex("support_ticket_token_unique").on(t.customer_token),
 		thread_idx: index("support_ticket_thread_idx").on(t.email_thread_key),
+		thread_key_unique: uniqueIndex("support_ticket_thread_key_unique")
+			.on(t.email_thread_key)
+			.where(sql`${t.email_thread_key} IS NOT NULL`),
 		msgid_idx: index("support_ticket_msgid_idx").on(t.email_message_id),
 		verified_idx: index("support_ticket_verified_idx").on(t.requester_verified, t.status),
 	}),
@@ -174,6 +177,11 @@ export const support_message = pgTable(
 		email_in_reply_to: varchar("email_in_reply_to", { length: 998 }),
 		// 'queued' | 'sent' | 'failed'
 		delivery_status: varchar("delivery_status", { length: 16 }),
+		// Inbound email only: the address it actually came from, and whether that
+		// is someone OTHER than the ticket's requester (0003). Quoting a ticket
+		// reference is enough to land on a ticket, so the console must say who wrote it.
+		sender_email: varchar("sender_email", { length: 320 }),
+		sender_mismatch: boolean("sender_mismatch").notNull().default(false),
 	},
 	(t) => ({
 		ticket_idx: index("support_message_ticket_idx").on(t.ticket_id, t.created_at),

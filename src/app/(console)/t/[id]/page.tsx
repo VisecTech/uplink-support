@@ -69,11 +69,18 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 							>
 								<div className="mb-2 flex items-center justify-between text-xs text-stone-500">
 									<span className="font-medium text-stone-300">
-										{note ? "Internal note" : m.author_kind === "agent" ? "Agent" : m.author_kind === "ai" ? "AI" : "Customer"}
+										{note ? "Internal note" : m.author_kind === "agent" ? "Agent" : m.author_kind === "ai" ? "AI" : m.sender_mismatch ? "Different sender" : "Customer"}
 										{m.ai_generated ? " · AI draft" : ""}
 									</span>
 									<span>{fmt(m.created_at)}</span>
 								</div>
+								{m.sender_mismatch && (
+									<p className="mb-2 rounded-md border border-amber-600/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+										Sent from <span className="font-mono">{m.sender_email}</span>, which is not this ticket&apos;s requester (
+										<span className="font-mono">{ticket.requester_email}</span>). It reached this ticket by quoting its reference.
+										Check before acting on it.
+									</p>
+								)}
 								<div className="whitespace-pre-wrap text-sm leading-relaxed text-stone-200">{m.body_text}</div>
 								{atts.length > 0 && (
 									<ul className="mt-3 flex flex-wrap gap-2">

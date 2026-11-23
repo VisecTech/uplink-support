@@ -10,9 +10,19 @@
 import { emailRole } from "./roles";
 import { sendEmail } from "./transport";
 
-/** Stable, human-readable ticket reference, e.g. "UWS-3F9A2C". */
+/**
+ * Stable, human-readable ticket reference, e.g. "UWS-3F9A2C1B7D".
+ *
+ * TEN characters of the ticket's random id since 2026-11-23 (it was six). Six
+ * gave an even chance of two tickets sharing a reference at about 4,800
+ * tickets, after which a reply could land on another customer's ticket. Ten
+ * puts that point past a million.
+ * ⚠ Older mail in customers' inboxes carries the six-character form. It still
+ * matches: lib/inbound/process.ts looks a reference up as a PREFIX of the id.
+ */
+export const SUPPORT_REF_LENGTH = 10;
 export function supportRef(ticketId: string): string {
-	return `UWS-${ticketId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+	return `UWS-${ticketId.replace(/-/g, "").slice(0, SUPPORT_REF_LENGTH).toUpperCase()}`;
 }
 
 function siteUrl(): string {
