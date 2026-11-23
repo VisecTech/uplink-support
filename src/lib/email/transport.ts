@@ -7,10 +7,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import nodemailer from "nodemailer";
 
-let _transport: nodemailer.Transporter | null = null;
+let _transport: ReturnType<typeof nodemailer.createTransport> | null = null;
 let _devLogged = false;
 
-function getTransport(): nodemailer.Transporter | null {
+function getTransport(): ReturnType<typeof nodemailer.createTransport> | null {
 	if (_transport) return _transport;
 	const host = process.env.SMTP_HOST;
 	if (!host) {
