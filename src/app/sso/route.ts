@@ -6,6 +6,9 @@
  * against the shared SUPPORT_SSO_SECRET, match an active support_staff by email,
  * start a staff session, and drop them in the console. Disabled if the secret
  * isn't set.
+ *
+ * The link works ONCE and for 30 seconds (lib/auth/sso-once.ts): it is a GET, so it sits in
+ * the access log and the browser history, where a link that stayed good would be a way in.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
@@ -13,11 +16,10 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { support_staff } from "@/db/schema";
 import { COOKIE_NAME, issueStaffSessionToken, SESSION_COOKIE_OPTS } from "@/lib/auth/staff";
+import { claimSsoOnce, ssoFresh } from "@/lib/auth/sso-once";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAX_AGE_S = 120; // token validity window
 
 export async function GET(req: NextRequest) {
 	const url = new URL(req.url);
@@ -39,14 +41,14 @@ export async function GET(req: NextRequest) {
 	if (!email || !ts || !sig) return fail("sso");
 
 	const tsNum = Number(ts);
-	if (!Number.isFinite(tsNum) || Math.abs(Date.now() / 1000 - tsNum) > MAX_AGE_S) {
-		return fail("sso_expired");
-	}
+	if (!ssoFresh(tsNum)) return fail("sso_expired");
 
 	const expected = createHmac("sha256", secret).update(`${email}|${ts}`).digest("hex");
 	const a = Buffer.from(expected);
 	const b = Buffer.from(sig);
 	if (a.length !== b.length || !timingSafeEqual(a, b)) return fail("sso");
+	// Only a link with a VALID signature is remembered, so junk cannot fill the list.
+	if (!claimSsoOnce(sig, tsNum)) return fail("sso_used");
 
 	const [staff] = await db
 		.select()

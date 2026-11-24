@@ -1,12 +1,17 @@
 /**
  * GET /api/stats — aggregate ticket counts for the admin dashboard card.
- * Token-gated (x-stats-token header == SUPPORT_SSO_SECRET) since it's consumed
+ * Token-gated (x-stats-token header == SUPPORT_STATS_TOKEN) since it's consumed
  * server-to-server by admin.uplink.net.au. Returns small JSON, no PII.
+ *
+ * ⚠ Its OWN token (audit low #68, 2026-11-24). This used to accept SUPPORT_SSO_SECRET, the
+ * key that signs staff sign-in links, so a low-value counts endpoint was a place to guess the
+ * high-value key. The sign-in key is not accepted here any more.
  */
 import { and, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { support_ticket } from "@/db/schema";
+import { sameSecret } from "@/lib/auth/shared-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,9 +22,7 @@ async function countWhere(cond: ReturnType<typeof and>): Promise<number> {
 }
 
 export async function GET(req: NextRequest) {
-	const secret = process.env.SUPPORT_SSO_SECRET;
-	const token = req.headers.get("x-stats-token");
-	if (!secret || !token || token !== secret) {
+	if (!sameSecret(req.headers.get("x-stats-token"), process.env.SUPPORT_STATS_TOKEN)) {
 		return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 	}
 
