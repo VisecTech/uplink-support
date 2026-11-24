@@ -1,8 +1,9 @@
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/db";
 import { support_ticket } from "@/db/schema";
 import { supportRef } from "@/lib/email/support-emails";
+import { TAB_BADGE, tabCounts } from "@/lib/inbox-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,21 @@ export default async function SupportInboxPage({
 	}
 	if (sp.product) conds.push(eq(support_ticket.product_kind, sp.product));
 
+	// One grouped query for the count on every tab, under the same conditions the tabs list by.
+	const countConds = [isNull(support_ticket.deleted_at)];
+	if (sp.product) countConds.push(eq(support_ticket.product_kind, sp.product));
+	const counts = tabCounts(
+		await db
+			.select({
+				status: support_ticket.status,
+				n: sql<number>`count(*)::int`,
+				unverified: sql<number>`(count(*) filter (where ${support_ticket.requester_verified} = false))::int`,
+			})
+			.from(support_ticket)
+			.where(and(...countConds))
+			.groupBy(support_ticket.status),
+	);
+
 	const rows = await db
 		.select()
 		.from(support_ticket)
@@ -65,13 +81,21 @@ export default async function SupportInboxPage({
 			<nav className="flex justify-center gap-1 text-sm">
 				{STATUS_TABS.map((t) => {
 					const active = status === t.key;
+					const n = counts[t.key as keyof typeof counts] ?? 0;
+					const badge = TAB_BADGE[t.key];
 					return (
 						<Link
 							key={t.key}
 							href={`/inbox?status=${t.key}`}
-							className={`rounded-lg px-3 py-1.5 ${active ? "bg-stone-800 text-white" : "text-stone-400 hover:text-white"}`}
+							aria-label={badge ? `${t.label}, ${n} ticket${n === 1 ? "" : "s"}` : t.label}
+							className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 ${active ? "bg-stone-800 text-white" : "text-stone-400 hover:text-white"}`}
 						>
 							{t.label}
+							{badge && n > 0 ? (
+								<span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none tabular-nums ${badge}`}>
+									{n}
+								</span>
+							) : null}
 						</Link>
 					);
 				})}
