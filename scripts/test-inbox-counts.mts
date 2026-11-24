@@ -1,7 +1,7 @@
 // The count shown on each inbox tab.   node --import tsx --test scripts/test-inbox-counts.mts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-const { tabCounts, TAB_BADGE } = await import("../src/lib/inbox-counts.ts");
+const { tabCounts, TAB_BADGE, TAB_BADGE_EMPTY } = await import("../src/lib/inbox-counts.ts");
 
 test("each tab counts its own status; unverified skips closed; all is everything", () => {
 	const c = tabCounts([
@@ -20,4 +20,8 @@ test("an empty queue is all zeros, and string counts from the database are added
 test("every tab but All has a badge style", () => {
 	for (const k of ["open", "pending", "on_hold", "solved", "unverified"]) assert.ok(TAB_BADGE[k], k);
 	assert.equal(TAB_BADGE.all, null);
+});
+test("an empty tab has its own faint style, different from every live one", () => {
+	assert.ok(TAB_BADGE_EMPTY);
+	for (const k of ["open", "pending", "on_hold", "solved", "unverified"]) assert.notEqual(TAB_BADGE[k], TAB_BADGE_EMPTY, k);
 });

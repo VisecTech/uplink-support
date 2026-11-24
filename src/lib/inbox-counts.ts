@@ -30,3 +30,6 @@ export const TAB_BADGE: Record<string, string | null> = {
 	solved: "bg-stone-700/50 text-stone-400",
 	all: null,
 };
+
+// An empty tab still shows its count, as a faint 0, so "nothing here" is stated, not implied.
+export const TAB_BADGE_EMPTY = "bg-stone-800/70 text-stone-500";

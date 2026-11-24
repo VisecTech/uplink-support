@@ -3,7 +3,7 @@ import Link from "next/link";
 import { db } from "@/db";
 import { support_ticket } from "@/db/schema";
 import { supportRef } from "@/lib/email/support-emails";
-import { TAB_BADGE, tabCounts } from "@/lib/inbox-counts";
+import { TAB_BADGE, TAB_BADGE_EMPTY, tabCounts } from "@/lib/inbox-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +91,10 @@ export default async function SupportInboxPage({
 							className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 ${active ? "bg-stone-800 text-white" : "text-stone-400 hover:text-white"}`}
 						>
 							{t.label}
-							{badge && n > 0 ? (
-								<span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none tabular-nums ${badge}`}>
+							{/* Always a number, zero included: with no badge at all an empty tab and a
+							    page that is not counting look the same (Paul, 2026-11-24). */}
+							{badge ? (
+								<span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none tabular-nums ${n > 0 ? badge : TAB_BADGE_EMPTY}`}>
 									{n}
 								</span>
 							) : null}
